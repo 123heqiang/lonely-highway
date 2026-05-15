@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=yes, viewport-fit=cover">
+  <title>孤独的公路 · 无尽驾驶</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #1a1c23;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', 'PingFang SC', system-ui, sans-serif;
+      touch-action: pan-x pan-y;
+      user-select: none;
+    }
+    .game-container {
+      position: relative;
+      width: 100%;
+      max-width: 450px;
+      height: 100vh;
+      max-height: 800px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+      overflow: hidden;
+      background: #0a0c14;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #2c3e50;
+    }
+    .ui-overlay {
+      position: absolute;
+      top: 20px;
+      left: 0;
+      right: 0;
+      padding: 0 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .distance-panel {
+      background: rgba(10, 12, 20, 0.75);
+      backdrop-filter: blur(12px);
+      border-radius: 32px;
+      padding: 10px 22px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 8px 18px rgba(0,0,0,0.5);
+      color: #f0e6d2;
+    }
+    .label {
+      font-size: 0.7rem;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #b9ad9c;
+      margin-bottom: 2px;
+    }
+    .distance-value {
+      font-size: 2.1rem;
+      font-weight: 600;
+      line-height: 1;
+      color: #f5e7d3;
+      text-shadow: 0 0 10px rgba(245, 200, 100, 0.5);
+    }
+    .unit {
+      font-size: 0.9rem;
+      margin-left: 4px;
+      color: #bbaa8c;
+    }
+    .speed-panel {
+      background: rgba(10, 12, 20, 0.7);
+      backdrop-filter: blur(12px);
+      border-radius: 32px;
+      padding: 10px 22px;
+      border: 1px solid rgba(255,255,255,0.2);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.5);
+    }
+    .speed-number {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #ffd78b;
+    }
+    .kmh {
+      font-size: 0.7rem;
+      margin-left: 3px;
+      color: #b9ad9c;
+    }
+    .controls-hint {
+      position: absolute;
+      bottom: 30px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: rgba(255, 255, 255, 0.55);
+      font-size: 0.8rem;
+      letter-spacing: 2px;
+      backdrop-filter: blur(4px);
+      padding: 8px;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .restart-btn {
+      position: absolute;
+      bottom: 85px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(20, 22, 30, 0.8);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.25);
+      color: #ddceb2;
+      padding: 10px 28px;
+      border-radius: 40px;
+      font-weight: 500;
+      letter-spacing: 1px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      z-index: 20;
+      pointer-events: auto;
+      background: rgba(30, 30, 40, 0.8);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+    .restart-btn:active {
+      background: rgba(60, 60, 70, 0.9);
+      border-color: #ffb347;
+      color: #fff3e0;
+    }
+    @media (max-width: 450px) {
+      .distance-value {
+        font-size: 1.8rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="game-container">
+    <canvas id="gameCanvas" aria-label="孤独的公路游戏画面"></canvas>
+    <div class="ui-overlay">
+      <div class="distance-panel">
+        <div class="label">行驶里程</div>
+        <div class="distance-value" id="distanceDisplay">0<span class="unit">km</span></div>
+      </div>
+      <div class="speed-panel">
+        <div class="label" style="color:#b9ad9c;">速度</div>
+        <div><span class="speed-number" id="speedDisplay">0</span><span class="kmh">km/h</span></div>
+      </div>
+    </div>
+    <button class="restart-btn" id="restartButton">🔄 重新出发</button>
+    <div class="controls-hint">←→ 方向键 / 滑动屏幕 控制车辆</div>
+  </div>
+
+  <script>
+    (function() {
+      const canvas = document.getElementById('gameCanvas');
+      const ctx = canvas.getContext('2d');
+
+      const distanceDisplay = document.getElementById('distanceDisplay');
+      const speedDisplay = document.getElementById('speedDisplay');
+
+      let canvasWidth, canvasHeight;
+
+      let gameActive = true;
+      
+      const car = {
+        x: 0,
+        y: 0,
+        width: 44,
+        height: 70,
+        baseX: 0,
+        targetX: 0,
+        speed: 0,
+        maxSpeed: 160,
+        minSpeed: 20,
+        acceleration: 0.9,
+        friction: 0.2,
+        lateralSpeed: 4.8,
+      };
+
+      let distanceTraveled = 0;
+      let roadOffset = 0;
+      let roadsideObjects = [];
+      
+      let moveLeft = false;
+      let moveRight = false;
+      let touchActive = false;
+      let touchX = 0;
+
+      function resetGame() {
+        gameActive = true;
+        distanceTraveled = 0;
+        roadOffset = 0;
+        car.speed = 70;
+        if (canvasWidth) {
+          car.x = canvasWidth / 2;
+          car.baseX = car.x;
+          car.targetX = car.x;
+        }
+        roadsideObjects = [];
+        for (let i = 0; i < 8; i++) {
+          generateRoadsideObject(i * 140 + Math.random() * 100);
+        }
+        updateUI();
+      }
+
+      function generateRoadsideObject(zDistance = null) {
+        if (!canvasWidth) return;
+        const baseZ = zDistance !== null ? zDistance : 500 + Math.random() * 450;
+        const side = Math.random() < 0.5 ? 'left' : 'right';
+        const type = Math.random() < 0.6 ? 'pole' : 'bush';
+        roadsideObjects.push({
+          side: side,
+          type: type,
+          z: baseZ,
+          width: type === 'pole' ? 6 : 14,
+          height: type === 'pole' ? 70 : 28,
+        });
+      }
+
+      function updateRoadsideObjects() {
+        const moveStep = car.speed * 0.9;
+        for (let obj of roadsideObjects) {
+          obj.z -= moveStep;
+        }
+        roadsideObjects = roadsideObjects.filter(obj => obj.z > -50);
+        while (roadsideObjects.length < 14) {
+          let maxZ = 0;
+          if (roadsideObjects.length > 0) {
+            maxZ = Math.max(...roadsideObjects.map(o => o.z));
+          } else {
+            maxZ = 200;
+          }
+          const newZ = maxZ + 90 + Math.random() * 160;
+          generateRoadsideObject(newZ);
+        }
+      }
+
+      function handleLateralMovement() {
+        if (!gameActive) return;
+        const roadLeftBound = 25;
+        const roadRightBound = canvasWidth - 25;
+        
+        if (moveLeft) car.targetX -= car.lateralSpeed;
+        if (moveRight) car.targetX += car.lateralSpeed;
+        
+        if (touchActive) {
+          const targetFromTouch = Math.min(roadRightBound, Math.max(roadLeftBound, touchX));
+          car.targetX = targetFromTouch;
+        }
+        
+        car.targetX = Math.min(roadRightBound, Math.max(roadLeftBound, car.targetX));
+        car.x += (car.targetX - car.x) * 0.2;
+        car.x = Math.min(roadRightBound, Math.max(roadLeftBound, car.x));
+      }
+
+      function updateSpeed() {
+        if (!gameActive) {
+          car.speed = Math.max(0, car.speed - 0.8);
+          return;
+        }
+        const comfortSpeed = 105;
+        const speedDrift = (comfortSpeed - car.speed) * 0.008;
+        car.speed += speedDrift;
+        car.speed += (Math.random() - 0.5) * 0.4;
+        car.speed = Math.min(car.maxSpeed, Math.max(car.minSpeed, car.speed));
+      }
+
+      function updateDistance() {
+        if (!gameActive) return;
+        const deltaSeconds = 1/60;
+        const kmPerFrame = (car.speed / 3600) * deltaSeconds;
+        distanceTraveled += kmPerFrame;
+        roadOffset = (roadOffset + car.speed * 0.35) % 80;
+      }
+
+      function updateUI() {
+        distanceDisplay.innerHTML = `${Math.floor(distanceTraveled)}<span class="unit">km</span>`;
+        speedDisplay.textContent = Math.floor(car.speed);
+      }
+
+      function drawSky() {
+        const gradient = ctx.createLinearGradient(0, 0, 0, canvasHeight * 0.8);
+        gradient.addColorStop(0, '#1b2838');
+        gradient.addColorStop(0.5, '#2c3e50');
+        gradient.addColorStop(1, '#3b4b5e');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+        
+        ctx.fillStyle = '#2a3747';
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(0, canvasHeight * 0.5);
+        ctx.lineTo(canvasWidth * 0.2, canvasHeight * 0.35);
+        ctx.lineTo(canvasWidth * 0.5, canvasHeight * 0.45);
+        ctx.lineTo(canvasWidth * 0.8, canvasHeight * 0.33);
+        ctx.lineTo(canvasWidth, canvasHeight * 0.43);
+        ctx.lineTo(canvasWidth, canvasHeight);
+        ctx.lineTo(0, canvasHeight);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+      }
+
+      function drawRoad() {
+        const roadWidth = canvasWidth * 0.6;
+        const leftX = (canvasWidth - roadWidth) / 2;
+        const rightX = leftX + roadWidth;
+        
+        ctx.fillStyle = '#2c3e50';
+        ctx.fillRect(leftX, 0, roadWidth, canvasHeight);
+        const roadGrad = ctx.createLinearGradient(leftX, 0, rightX, 0);
+        roadGrad.addColorStop(0, '#1e2b38');
+        roadGrad.addColorStop(0.3, '#34495e');
+        roadGrad.addColorStop(0.7, '#3d566e');
+        roadGrad.addColorStop(1, '#1e2b38');
+        ctx.fillStyle = roadGrad;
+        ctx.fillRect(leftX, 0, roadWidth, canvasHeight);
+        
+        ctx.strokeStyle = '#e0e0e0';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(leftX + 4, 0);
+        ctx.lineTo(leftX + 4, canvasHeight);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(rightX - 4, 0);
+        ctx.lineTo(rightX - 4, canvasHeight);
+        ctx.stroke();
+        
+        ctx.strokeStyle = '#f1c40f';
+        ctx.lineWidth = 2.2;
+        ctx.setLineDash([25, 25]);
+        const centerX = canvasWidth / 2;
+        ctx.moveTo(centerX, -20 + roadOffset);
+        ctx.lineTo(centerX, canvasHeight + 20);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        ctx.strokeStyle = '#5d6b7a';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(leftX, 0);
+        ctx.lineTo(leftX, canvasHeight);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(rightX, 0);
+        ctx.lineTo(rightX, canvasHeight);
+        ctx.stroke();
+      }
+
+      function drawRoadsideObjects() {
+        if (!canvasWidth) return;
+        const roadWidth = canvasWidth * 0.6;
+        const leftEdge = (canvasWidth - roadWidth) / 2;
+        const rightEdge = leftEdge + roadWidth;
+        
+        const sorted = [...roadsideObjects].sort((a, b) => b.z - a.z);
+        
+        for (let obj of sorted) {
+          const maxZ = 700;
+          const minZ = 20;
+          const scale = Math.min(1, Math.max(0.15, (obj.z - minZ) / (maxZ - minZ)));
+          const horizonY = canvasHeight * 0.4;
+          const baseY = horizonY + (canvasHeight - horizonY) * (1 - scale * 0.85);
+          
+          let screenX;
+          const offsetFromRoad = 12 + (1-scale) * 25;
+          if (obj.side === 'left') {
+            screenX = leftEdge - offsetFromRoad - (obj.width * scale) / 2;
+          } else {
+            screenX = rightEdge + offsetFromRoad + (obj.width * scale) / 2;
+          }
+          
+          const alpha = Math.min(0.9, 0.35 + scale * 0.7);
+          ctx.globalAlpha = alpha;
+          
+          if (obj.type === 'pole') {
+            const poleWidth = 5 * scale;
+            const poleHeight = 65 * scale;
+            ctx.fillStyle = '#4a3e35';
+            ctx.fillRect(screenX - poleWidth/2, baseY - poleHeight, poleWidth, poleHeight);
+            ctx.fillStyle = '#5d4a38';
+            ctx.fillRect(screenX - 10*scale, baseY - poleHeight + 5*scale, 20*scale, 4*scale);
+          } else {
+            ctx.fillStyle = '#3d5a3c';
+            ctx.beginPath();
+            ctx.ellipse(screenX, baseY - 6*scale, 9*scale, 11*scale, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#2b4129';
+            ctx.beginPath();
+            ctx.ellipse(screenX-2*scale, baseY - 8*scale, 5*scale, 7*scale, 0, 0, Math.PI*2);
+            ctx.fill();
+          }
+        }
+        ctx.globalAlpha = 1.0;
+      }
+
+      function drawCar() {
+        if (!canvasWidth) return;
+        // 关键修改：将车辆位置大幅上移，确保完整显示
+        const carX = car.x;
+        const carY = canvasHeight * 0.68; // 原来0.72太高导致切掉，改为0.68让车完全可见
+        
+        ctx.save();
+        ctx.translate(carX, carY);
+        
+        // 车身阴影
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.fillRect(-car.width/2 + 3, -car.height/2 + 5, car.width, car.height);
+        
+        // 车身主体
+        ctx.fillStyle = '#1e2b3c';
+        ctx.shadowColor = '#00000040';
+        ctx.shadowBlur = 10;
+        ctx.fillRect(-car.width/2, -car.height/2, car.width, car.height);
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        
+        // 车窗
+        ctx.fillStyle = '#1a1e2b';
+        ctx.fillRect(-car.width/2 + 5, -car.height/2 + 7, car.width-10, 18);
+        ctx.fillStyle = '#87ceeb';
+        ctx.globalAlpha = 0.6;
+        ctx.fillRect(-car.width/2 + 6, -car.height/2 + 8, car.width-12, 16);
+        ctx.globalAlpha = 1;
+        
+        // 前大灯
+        ctx.fillStyle = '#f9e076';
+        ctx.beginPath();
+        ctx.arc(-car.width/2 + 8, car.height/2 - 4, 5, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(car.width/2 - 8, car.height/2 - 4, 5, 0, Math.PI*2);
+        ctx.fill();
+        
+        // 尾灯
+        ctx.fillStyle = '#c0392b';
+        ctx.beginPath();
+        ctx.arc(-car.width/2 + 4, -car.height/2 + 10, 3.5, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(car.width/2 - 4, -car.height/2 + 10, 3.5, 0, Math.PI*2);
+        ctx.fill();
+        
+        // 车轮
+        ctx.fillStyle = '#111';
+        ctx.fillRect(-car.width/2 - 3, -car.height/2 + 15, 8, 14);
+        ctx.fillRect(car.width/2 - 5, -car.height/2 + 15, 8, 14);
+        ctx.fillRect(-car.width/2 - 2, car.height/2 - 15, 8, 14);
+        ctx.fillRect(car.width/2 - 6, car.height/2 - 15, 8, 14);
+        
+        ctx.restore();
+      }
+
+      function drawUIEffects() {
+        if (!gameActive) {
+          ctx.fillStyle = 'rgba(0,0,0,0.5)';
+          ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+          ctx.fillStyle = '#f0e6d2';
+          ctx.font = 'bold 20px "PingFang SC", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('旅途暂停', canvasWidth/2, canvasHeight/2-20);
+        }
+      }
+
+      function gameLoop() {
+        if (!canvasWidth || !canvasHeight) return;
+        
+        handleLateralMovement();
+        updateSpeed();
+        updateDistance();
+        updateRoadsideObjects();
+        
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        drawSky();
+        drawRoad();
+        drawRoadsideObjects();
+        drawCar();
+        drawUIEffects();
+        
+        updateUI();
+        requestAnimationFrame(gameLoop);
+      }
+
+      function handleKeyDown(e) {
+        if (e.key === 'ArrowLeft' || e.key === 'Left' || e.key === 'ArrowRight' || e.key === 'Right') {
+          e.preventDefault();
+          if (e.key === 'ArrowLeft' || e.key === 'Left') {
+            moveLeft = true;
+          } else if (e.key === 'ArrowRight' || e.key === 'Right') {
+            moveRight = true;
+          }
+        }
+      }
+
+      function handleKeyUp(e) {
+        if (e.key === 'ArrowLeft' || e.key === 'Left' || e.key === 'ArrowRight' || e.key === 'Right') {
+          e.preventDefault();
+          if (e.key === 'ArrowLeft' || e.key === 'Left') {
+            moveLeft = false;
+          } else if (e.key === 'ArrowRight' || e.key === 'Right') {
+            moveRight = false;
+          }
+        }
+      }
+
+      function handleTouchStart(e) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        if (!touch) return;
+        const rect = canvas.getBoundingClientRect();
+        touchX = touch.clientX - rect.left;
+        touchX = Math.min(rect.width, Math.max(0, touchX));
+        touchActive = true;
+        moveLeft = false;
+        moveRight = false;
+      }
+
+      function handleTouchMove(e) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        if (!touch) return;
+        const rect = canvas.getBoundingClientRect();
+        touchX = touch.clientX - rect.left;
+        touchX = Math.min(rect.width, Math.max(0, touchX));
+      }
+
+      function handleTouchEnd(e) {
+        e.preventDefault();
+        touchActive = false;
+      }
+
+      function handleMouseDown(e) {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        touchX = e.clientX - rect.left;
+        touchX = Math.min(rect.width, Math.max(0, touchX));
+        touchActive = true;
+        moveLeft = false;
+        moveRight = false;
+      }
+
+      function handleMouseMove(e) {
+        if (!touchActive) return;
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        touchX = e.clientX - rect.left;
+        touchX = Math.min(rect.width, Math.max(0, touchX));
+      }
+
+      function handleMouseUp(e) {
+        e.preventDefault();
+        touchActive = false;
+      }
+
+      function resizeCanvas() {
+        const container = document.querySelector('.game-container');
+        if (!container) return;
+        canvasWidth = container.clientWidth;
+        canvasHeight = container.clientHeight;
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+        
+        if (car.x === 0 && canvasWidth) {
+          car.x = canvasWidth / 2;
+        }
+        car.baseX = canvasWidth / 2;
+        car.targetX = car.x;
+      }
+
+      document.getElementById('restartButton').addEventListener('click', (e) => {
+        e.preventDefault();
+        resetGame();
+      });
+      
+      window.addEventListener('resize', resizeCanvas);
+      window.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('keyup', handleKeyUp);
+      
+      canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+      canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+      canvas.addEventListener('touchend', handleTouchEnd);
+      canvas.addEventListener('touchcancel', handleTouchEnd);
+      
+      canvas.addEventListener('mousedown', handleMouseDown);
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+
+      resizeCanvas();
+      resetGame();
+      gameLoop();
+      
+      document.body.addEventListener('touchstart', function(e) {
+        if (e.target === canvas) return;
+      }, { passive: false });
+      
+    })();
+  </script>
+</body>
+</html>
